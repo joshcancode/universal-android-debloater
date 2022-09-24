@@ -4,7 +4,7 @@ use crate::CONFIG_DIR;
 use serde::{Deserialize, Serialize};
 use static_init::dynamic;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{PathBuf};
 
 #[derive(Default, Debug, Serialize, Deserialize, Clone)]
 pub struct Config {
@@ -24,14 +24,20 @@ pub struct DeviceSettings {
     pub device_id: String,
     pub disable_mode: bool,
     pub multi_user_mode: bool,
+    #[serde(skip)]
+    pub backups: Vec<String>,
+    #[serde(skip)]
+    pub selected_backup: Option<String>,
 }
 
 impl Default for DeviceSettings {
     fn default() -> Self {
         Self {
-            device_id: "".to_string(),
+            device_id: String::new(),
             multi_user_mode: get_android_sdk() > 21,
             disable_mode: false,
+            backups: vec![],
+            selected_backup: None
         }
     }
 }

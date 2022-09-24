@@ -9,7 +9,6 @@ use chrono::offset::Utc;
 use chrono::DateTime;
 use std::collections::HashMap;
 use std::fs;
-use std::io::{self, prelude::*, BufReader};
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -80,44 +79,6 @@ pub fn update_selection_count(selection: &mut Selection, p_state: PackageState, 
         }
         PackageState::All => {}
     };
-}
-
-pub async fn export_selection(packages: Vec<PackageRow>) -> Result<bool, String> {
-    let selected = packages
-        .iter()
-        .filter(|p| p.selected)
-        .map(|p| p.name.clone())
-        .collect::<Vec<String>>()
-        .join("\n");
-
-    match fs::write("uad_exported_selection.txt", selected) {
-        Ok(_) => Ok(true),
-        Err(err) => Err(err.to_string()),
-    }
-}
-
-#[allow(clippy::needless_collect)] // false positive: https://github.com/rust-lang/rust-clippy/issues/6164
-pub fn import_selection(packages: &mut [PackageRow], selection: &mut Selection) -> io::Result<()> {
-    let file = fs::File::open("uad_exported_selection.txt")?;
-    let reader = BufReader::new(file);
-    let imported_selection: Vec<String> = reader
-        .lines()
-        .map(|l| l.expect("Could not parse line"))
-        .collect();
-
-    *selection = Selection::default(); // should already be empty normally
-
-    for (i, p) in packages.iter_mut().enumerate() {
-        if imported_selection.contains(&p.name) {
-            p.selected = true;
-            selection.selected_packages.push(i);
-            update_selection_count(selection, p.state, true);
-        } else {
-            p.selected = false;
-        }
-    }
-
-    Ok(())
 }
 
 pub fn string_to_theme(theme: String) -> Theme {

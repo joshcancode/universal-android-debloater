@@ -1,10 +1,9 @@
 use crate::core::sync::{action_handler, Phone, User};
 use crate::core::theme::Theme;
+use crate::core::save::{backup_phone, import_selection};
+use crate::core::utils::{fetch_packages, perform_commands, update_selection_count};
 use crate::core::uad_lists::{
     load_debloat_lists, Opposite, Package, PackageState, Removal, UadList, UadListState,
-};
-use crate::core::utils::{
-    export_selection, fetch_packages, import_selection, perform_commands, update_selection_count,
 };
 use crate::gui::style;
 use std::collections::HashMap;
@@ -45,7 +44,7 @@ pub enum LoadingState {
 pub struct List {
     pub loading_state: LoadingState,
     pub uad_lists: HashMap<String, Package>,
-    phone_packages: Vec<Vec<PackageRow>>, // packages of all users of the phone
+    pub phone_packages: Vec<Vec<PackageRow>>, // packages of all users of the phone
     filtered_packages: Vec<usize>, // phone_packages indexes of the selected user (= what you see on screen)
     pub selection: Selection,
     selected_package_state: Option<PackageState>,
@@ -71,7 +70,7 @@ pub enum Message {
     ApplyActionOnSelection(Action),
     ExportSelectionPressed,
     List(usize, RowMessage),
-    ExportedSelection(Result<bool, String>),
+    ExportedSelection(Result<(), String>),
     ChangePackageState(Result<usize, ()>),
     Nothing,
 }
@@ -293,7 +292,11 @@ impl List {
                 Command::batch(commands)
             }
             Message::ExportSelectionPressed => Command::perform(
-                export_selection(self.phone_packages[i_user].clone()),
+                backup_phone(
+                    selected_device.user_list.clone(),
+                    settings.device.device_id.clone(),
+                    self.phone_packages.clone()
+                ),
                 Message::ExportedSelection,
             ),
             Message::ExportedSelection(export) => {
@@ -473,13 +476,10 @@ impl List {
                     .on_press(Message::ToggleAllSelected(false))
                     .style(style::Button::Primary);
 
-                let export_selection_btn = button(text(format!(
-                    "Export current selection ({})",
-                    self.selection.selected_packages.len()
-                )))
-                .padding(5)
-                .on_press(Message::ExportSelectionPressed)
-                .style(style::Button::Primary);
+                let export_selection_btn = button("Backup the device")
+                    .padding(5)
+                    .on_press(Message::ExportSelectionPressed)
+                    .style(style::Button::Primary);
 
                 let action_row = row![
                     select_all_btn,

@@ -3,9 +3,12 @@ use crate::core::sync::Phone;
 use crate::core::theme::Theme;
 use crate::core::utils::{open_url, string_to_theme};
 use crate::gui::style;
+use crate::core::save::{BACKUP_DIR, list_available_backups};
+use crate::gui::widgets::package_row::PackageRow;
+use crate::core::save::backup_phone;
 
-use iced::widget::{button, checkbox, column, container, radio, row, text, Space};
-use iced::{Element, Length, Renderer};
+use iced::widget::{button, checkbox, column, container, radio, row, text, Space, pick_list};
+use iced::{Element, Length, Renderer, Alignment, Command};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
@@ -31,15 +34,20 @@ pub enum Message {
     MultiUserMode(bool),
     ApplyTheme(Theme),
     UrlPressed(PathBuf),
+    BackupSelected(String),
+    BackupDevice,
+    RestoreDevice,
+    DeviceBackedUp(Result<(), String>)
 }
 
 impl Settings {
-    pub fn update(&mut self, phone: &Phone, msg: Message) {
+    pub fn update(&mut self, phone: &Phone, packages: &Vec<Vec<PackageRow>>, msg: Message) -> Command<Message> {
         match msg {
             Message::ExpertMode(toggled) => {
                 self.general.expert_mode = toggled;
                 debug!("Config change: {:?}", self);
                 Config::save_changes(self, &phone.adb_id);
+                Command::none()
             }
             Message::DisableMode(toggled) => {
                 if phone.android_sdk >= 23 {
@@ -47,35 +55,70 @@ impl Settings {
                     debug!("Config change: {:?}", self);
                     Config::save_changes(self, &phone.adb_id);
                 }
+                Command::none()
             }
             Message::MultiUserMode(toggled) => {
                 self.device.multi_user_mode = toggled;
                 debug!("Config change: {:?}", self);
                 Config::save_changes(self, &phone.adb_id);
+                Command::none()
             }
             Message::ApplyTheme(theme) => {
                 self.general.theme = theme.to_string();
                 debug!("Config change: {:?}", self);
                 Config::save_changes(self, &phone.adb_id);
+                Command::none()
             }
             Message::UrlPressed(url) => {
                 open_url(url);
+                Command::none()
             }
             Message::LoadDeviceSettings => {
+                let backups = list_available_backups(&*BACKUP_DIR.join(phone.adb_id.clone()));
                 match Config::load_configuration_file()
                     .devices
                     .iter()
                     .find(|d| d.device_id == phone.adb_id)
                 {
-                    Some(device) => self.device = device.clone(),
+                    Some(device) => {
+                        self.device = device.clone();
+                        self.device.backups = backups.clone();
+                        self.device.selected_backup = backups.first().cloned();
+                    }
                     None => {
                         self.device = DeviceSettings {
                             device_id: phone.adb_id.clone(),
                             multi_user_mode: phone.android_sdk > 21,
                             disable_mode: false,
+                            backups: backups.clone(),
+                            selected_backup: backups.first().cloned(),
                         }
                     }
                 };
+                Command::none()
+            }
+            Message::BackupSelected(path) => {
+                self.device.selected_backup = Some(path);
+                Command::none()
+            }
+            Message::BackupDevice => {
+                Command::perform(
+                    backup_phone(
+                        phone.user_list.clone(),
+                        self.device.device_id.clone(),
+                        packages.clone()
+                    ),
+                    Message::DeviceBackedUp
+                )
+            }
+            Message::DeviceBackedUp(_) => {
+                self.device.backups = list_available_backups(&*BACKUP_DIR.join(phone.adb_id.clone()));
+                self.device.selected_backup = self.device.backups.first().cloned();
+                Command::none()
+            }
+            Message::RestoreDevice => {
+                todo!();
+                Command::none()
             }
         }
     }
@@ -199,6 +242,53 @@ impl Settings {
         .height(Length::Shrink)
         .style(style::Container::Frame);
 
+
+        let backup_pick_list = pick_list(
+            self.device.backups.clone(),
+            self.device.selected_backup.clone(),
+            Message::BackupSelected,
+        );
+
+        let backup_btn = button("Backup")
+        .padding(5)
+        .on_press(Message::BackupDevice)
+        .style(style::Button::Primary);
+
+        let restore_btn = button("Restore")
+        .padding(5)
+        .on_press(Message::RestoreDevice)
+        .style(style::Button::Primary);
+
+        let backup_ctn = container(
+            row![
+                if self.device.backups.is_empty() {
+                    row![
+                    text("No backup").style(style::Text::Commentary),
+                    restore_btn,
+                    "Restore the state of the phone",
+                    ]
+                    .spacing(10)
+                    .align_items(Alignment::Center)
+                } else {
+                    row![
+                    backup_pick_list,
+                    restore_btn,
+                    "Restore the state of the phone",
+                    ]
+                    .spacing(10)
+                    .align_items(Alignment::Center)
+                },
+                Space::new(Length::Fill, Length::Shrink),
+                backup_btn,
+            ]
+            .spacing(10)
+            .align_items(Alignment::Center)
+        )
+        .padding(10)
+        .width(Length::Fill)
+        .height(Length::Shrink)
+        .style(style::Container::Frame);
+
         let content = column![
             text("Theme").size(25),
             theme_ctn,
@@ -207,6 +297,7 @@ impl Settings {
             text("Current device").size(25),
             warning_ctn,
             device_specific_ctn,
+            backup_ctn,
         ]
         .width(Length::Fill)
         .spacing(20);
