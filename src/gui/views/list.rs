@@ -1,7 +1,7 @@
 use crate::core::sync::{action_handler, Phone, User};
 use crate::core::theme::Theme;
 use crate::core::save::{backup_phone, import_selection};
-use crate::core::utils::{fetch_packages, perform_commands, update_selection_count};
+use crate::core::utils::{fetch_packages, perform_adb_commands, update_selection_count};
 use crate::core::uad_lists::{
     load_debloat_lists, Opposite, Package, PackageState, Removal, UadList, UadListState,
 };

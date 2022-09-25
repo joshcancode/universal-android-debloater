@@ -1,6 +1,6 @@
 use crate::core::utils::update_selection_count;
 use crate::core::uad_lists::PackageState;
-use crate::core::sync::User;
+use crate::core::sync::{action_handler, User};
 use crate::gui::views::list::Selection;
 use crate::gui::widgets::package_row::PackageRow;
 use std::fs;
@@ -97,7 +97,41 @@ pub fn restore_backup(backup: String) -> Result<(), ()> {
     match fs::read_to_string(backup) {
         Ok(data) => {
             let phone_backup: PhoneBackup = serde_json::from_str(&data).expect("Unable to parse backup file");
-            todo!();
+
+            for u in phone_backup.users {
+                action_handler
+            }
+
+            let mut commands = vec![];
+            let actions = action_handler(
+                &self.selected_user.unwrap(),
+                package,
+                selected_device,
+                &settings.device,
+            );
+
+            for (i, action) in actions.into_iter().enumerate() {
+                // Only the first command can change the package state
+                if i != 0 {
+                    commands.push(Command::perform(
+                        perform_adb_commands(
+                            action,
+                            i_package,
+                            package.removal.to_string(),
+                        ),
+                        |_| Message::Nothing,
+                    ));
+                } else {
+                    commands.push(Command::perform(
+                        perform_adb_commands(
+                            action,
+                            i_package,
+                            package.removal.to_string(),
+                        ),
+                        Message::ChangePackageState,
+                    ));
+                }
+            }
             Ok(())
         }
         Err(e) => {
