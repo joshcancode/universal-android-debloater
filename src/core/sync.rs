@@ -4,9 +4,11 @@ use crate::gui::widgets::package_row::PackageRow;
 use regex::Regex;
 use retry::{delay::Fixed, retry, OperationResult};
 use static_init::dynamic;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::env;
 use std::process::Command;
+
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -121,6 +123,7 @@ pub fn hashset_system_packages(state: PackageState, user_id: Option<&User>) -> H
 }
 
 // Minimum information for processing adb commands
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
 pub struct CorePackage {
     pub name: String,
     pub state: PackageState,
@@ -143,11 +146,18 @@ impl From<&PackageRow> for CorePackage {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Action {
+    RestoreDevice,
+    Misc
+}
+
 pub fn action_handler(
-    user: &User,
+    selected_user: &User,
     package: &CorePackage,
     phone: &Phone,
     settings: &DeviceSettings,
+    action: &Action
 ) -> Vec<String> {
     // https://github.com/0x192/universal-android-debloater/wiki/ADB-reference
     // ALWAYS PUT THE COMMAND THAT CHANGES THE PACKAGE STATE FIRST!
@@ -182,12 +192,19 @@ pub fn action_handler(
         PackageState::All => vec![], // This can't happen (like... never)
     };
 
-    if settings.multi_user_mode {
-        request_builder(commands, &package.name, &phone.user_list)
-    } else if phone.android_sdk < 21 {
+    if phone.android_sdk < 21 {
         request_builder(commands, &package.name, &[])
     } else {
-        request_builder(commands, &package.name, &[*user])
+        match action {
+            Action::Misc => {
+                if settings.multi_user_mode  {
+                    request_builder(commands, &package.name, &phone.user_list)
+                } else {
+                    request_builder(commands, &package.name, &[*selected_user])
+                }
+            }
+            Action::RestoreDevice => request_builder(commands, &package.name, &phone.user_list)
+        }
     }
 }
 

@@ -1,14 +1,15 @@
-use crate::core::config::{Config, DeviceSettings, GeneralSettings};
-use crate::core::sync::Phone;
+use crate::core::config::{Config, DeviceSettings, GeneralSettings, BackupSettings};
+use crate::core::save::{backup_phone, list_available_backup_user, restore_backup};
+use crate::core::save::{list_available_backups, BACKUP_DIR};
+use crate::core::sync::{User, Phone};
 use crate::core::theme::Theme;
 use crate::core::utils::{open_url, string_to_theme};
+use crate::gui::perform_adb_commands;
 use crate::gui::style;
-use crate::core::save::{BACKUP_DIR, list_available_backups};
 use crate::gui::widgets::package_row::PackageRow;
-use crate::core::save::backup_phone;
 
-use iced::widget::{button, checkbox, column, container, radio, row, text, Space, pick_list};
-use iced::{Element, Length, Renderer, Alignment, Command};
+use iced::widget::{button, checkbox, column, container, pick_list, radio, row, text, Space};
+use iced::{Alignment, Command, Element, Length, Renderer};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
@@ -37,11 +38,18 @@ pub enum Message {
     BackupSelected(String),
     BackupDevice,
     RestoreDevice,
-    DeviceBackedUp(Result<(), String>)
+    DeviceBackedUp(Result<(), String>),
+    BackupUserSelected(User),
+    Nothing,
 }
 
 impl Settings {
-    pub fn update(&mut self, phone: &Phone, packages: &Vec<Vec<PackageRow>>, msg: Message) -> Command<Message> {
+    pub fn update(
+        &mut self,
+        phone: &Phone,
+        packages: &Vec<Vec<PackageRow>>,
+        msg: Message,
+    ) -> Command<Message> {
         match msg {
             Message::ExpertMode(toggled) => {
                 self.general.expert_mode = toggled;
@@ -82,42 +90,69 @@ impl Settings {
                 {
                     Some(device) => {
                         self.device = device.clone();
-                        self.device.backups = backups.clone();
-                        self.device.selected_backup = backups.first().cloned();
+                        self.device.backup = BackupSettings {
+                            backups: backups.clone(),
+                            selected: backups.first().cloned(),
+                            users: phone.user_list.clone(),
+                            selected_user: phone.user_list.first().copied()
+                        };
                     }
                     None => {
                         self.device = DeviceSettings {
                             device_id: phone.adb_id.clone(),
                             multi_user_mode: phone.android_sdk > 21,
                             disable_mode: false,
-                            backups: backups.clone(),
-                            selected_backup: backups.first().cloned(),
+                            backup: BackupSettings {
+                                backups: backups.clone(),
+                                selected: backups.first().cloned(),
+                                users: phone.user_list.clone(),
+                                selected_user: phone.user_list.first().copied(),
+                            }
                         }
                     }
                 };
                 Command::none()
             }
             Message::BackupSelected(path) => {
-                self.device.selected_backup = Some(path);
+                self.device.backup.selected = Some(path.clone());
+                list_available_backup_user(path);
                 Command::none()
             }
-            Message::BackupDevice => {
-                Command::perform(
-                    backup_phone(
-                        phone.user_list.clone(),
-                        self.device.device_id.clone(),
-                        packages.clone()
-                    ),
-                    Message::DeviceBackedUp
-                )
-            }
+            Message::BackupDevice => Command::perform(
+                backup_phone(
+                    phone.user_list.clone(),
+                    self.device.device_id.clone(),
+                    packages.clone(),
+                ),
+                Message::DeviceBackedUp,
+            ),
             Message::DeviceBackedUp(_) => {
-                self.device.backups = list_available_backups(&*BACKUP_DIR.join(phone.adb_id.clone()));
-                self.device.selected_backup = self.device.backups.first().cloned();
+                self.device.backup.backups =
+                    list_available_backups(&*BACKUP_DIR.join(phone.adb_id.clone()));
+                self.device.backup.selected = self.device.backup.backups.first().cloned();
+                Command::none()
+            }
+            Message::BackupUserSelected(user) => {
+                self.device.backup.selected_user = Some(user);
                 Command::none()
             }
             Message::RestoreDevice => {
-                todo!();
+                let actions = restore_backup(
+                    self.device.backup.selected.as_ref().unwrap().to_string(),
+                    self.device.backup.selected_user
+                ).unwrap();
+
+                let mut commands = vec![];
+                for action in actions {
+                    commands.push(Command::perform(
+                        perform_adb_commands(action, 0, "Restore".to_string()),
+                        |_| Message::Nothing
+                        )
+                    );
+                }
+                Command::batch(commands)
+            }
+            Message::Nothing => {
                 Command::none()
             }
         }
@@ -242,38 +277,44 @@ impl Settings {
         .height(Length::Shrink)
         .style(style::Container::Frame);
 
-
         let backup_pick_list = pick_list(
-            self.device.backups.clone(),
-            self.device.selected_backup.clone(),
+            self.device.backup.backups.clone(),
+            self.device.backup.selected.clone(),
             Message::BackupSelected,
         );
 
+        let backup_user_pick_list = pick_list(
+            self.device.backup.users.clone(),
+            self.device.backup.selected_user.clone(),
+            Message::BackupUserSelected,
+        );
+
         let backup_btn = button("Backup")
-        .padding(5)
-        .on_press(Message::BackupDevice)
-        .style(style::Button::Primary);
+            .padding(5)
+            .on_press(Message::BackupDevice)
+            .style(style::Button::Primary);
 
         let restore_btn = button("Restore")
-        .padding(5)
-        .on_press(Message::RestoreDevice)
-        .style(style::Button::Primary);
+            .padding(5)
+            .on_press(Message::RestoreDevice)
+            .style(style::Button::Primary);
 
         let backup_ctn = container(
             row![
-                if self.device.backups.is_empty() {
+                if self.device.backup.backups.is_empty() {
                     row![
-                    text("No backup").style(style::Text::Commentary),
-                    restore_btn,
-                    "Restore the state of the phone",
+                        text("No backup").style(style::Text::Commentary),
+                        restore_btn,
+                        "Restore the state of the phone",
                     ]
                     .spacing(10)
                     .align_items(Alignment::Center)
                 } else {
                     row![
-                    backup_pick_list,
-                    restore_btn,
-                    "Restore the state of the phone",
+                        backup_pick_list,
+                        restore_btn,
+                        backup_user_pick_list,
+                        "Restore the state of the phone",
                     ]
                     .spacing(10)
                     .align_items(Alignment::Center)
@@ -282,7 +323,7 @@ impl Settings {
                 backup_btn,
             ]
             .spacing(10)
-            .align_items(Alignment::Center)
+            .align_items(Alignment::Center),
         )
         .padding(10)
         .width(Length::Fill)

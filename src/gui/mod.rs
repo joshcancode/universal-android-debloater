@@ -144,14 +144,14 @@ impl Application for UadGui {
                     msg,
                 )
                 .map(Message::AppsAction),
-            Message::SettingsAction(msg) => {
-                self.settings_view.update(
+            Message::SettingsAction(msg) => self
+                .settings_view
+                .update(
                     &self.selected_device.clone().unwrap_or_default(),
                     &self.apps_view.phone_packages,
-                    msg
-                    )
-                .map(Message::SettingsAction)
-            }
+                    msg,
+                )
+                .map(Message::SettingsAction),
             Message::AboutAction(msg) => {
                 self.about_view.update(msg.clone());
 

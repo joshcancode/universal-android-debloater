@@ -1,10 +1,10 @@
-use crate::core::sync::{action_handler, Phone, User};
-use crate::core::theme::Theme;
 use crate::core::save::{backup_phone, import_selection};
-use crate::core::utils::{fetch_packages, perform_adb_commands, update_selection_count};
+use crate::core::sync::{action_handler, Phone, User, Action as AdbAction };
+use crate::core::theme::Theme;
 use crate::core::uad_lists::{
     load_debloat_lists, Opposite, Package, PackageState, Removal, UadList, UadListState,
 };
+use crate::core::utils::{fetch_packages, perform_adb_commands, update_selection_count};
 use crate::gui::style;
 use std::collections::HashMap;
 use std::env;
@@ -206,6 +206,7 @@ impl List {
                             &package.into(),
                             selected_device,
                             &settings.device,
+                            &AdbAction::Misc
                         );
 
                         for (i, action) in actions.into_iter().enumerate() {
@@ -258,6 +259,7 @@ impl List {
                         &(&self.phone_packages[i_user][i]).into(),
                         selected_device,
                         &settings.device,
+                        &AdbAction::Misc
                     );
                     for (j, action) in actions.into_iter().enumerate() {
                         // Only the first command can change the package state
@@ -281,7 +283,7 @@ impl List {
                 backup_phone(
                     selected_device.user_list.clone(),
                     settings.device.device_id.clone(),
-                    self.phone_packages.clone()
+                    self.phone_packages.clone(),
                 ),
                 Message::ExportedSelection,
             ),
