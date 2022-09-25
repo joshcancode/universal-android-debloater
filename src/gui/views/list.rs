@@ -203,32 +203,25 @@ impl List {
                         let mut commands = vec![];
                         let actions = action_handler(
                             &self.selected_user.unwrap(),
-                            package,
+                            &package.into(),
                             selected_device,
                             &settings.device,
                         );
 
                         for (i, action) in actions.into_iter().enumerate() {
                             // Only the first command can change the package state
-                            if i != 0 {
-                                commands.push(Command::perform(
-                                    perform_commands(
-                                        action,
-                                        i_package,
-                                        package.removal.to_string(),
-                                    ),
-                                    |_| Message::Nothing,
-                                ));
-                            } else {
-                                commands.push(Command::perform(
-                                    perform_commands(
-                                        action,
-                                        i_package,
-                                        package.removal.to_string(),
-                                    ),
-                                    Message::ChangePackageState,
-                                ));
-                            }
+                            commands.push(Command::perform(
+                                perform_adb_commands(
+                                    action,
+                                    i_package,
+                                    package.removal.to_string(),
+                                ),
+                                if i == 0 {
+                                    Message::ChangePackageState
+                                } else {
+                                    |_| Message::Nothing
+                                },
+                            ));
                         }
                         Command::batch(commands)
                     }
@@ -262,31 +255,24 @@ impl List {
                 for i in selected_packages {
                     let actions = action_handler(
                         &self.selected_user.unwrap(),
-                        &self.phone_packages[i_user][i],
+                        &(&self.phone_packages[i_user][i]).into(),
                         selected_device,
                         &settings.device,
                     );
                     for (j, action) in actions.into_iter().enumerate() {
                         // Only the first command can change the package state
-                        if j != 0 {
-                            commands.push(Command::perform(
-                                perform_commands(
-                                    action,
-                                    i,
-                                    self.phone_packages[i_user][i].removal.to_string(),
-                                ),
-                                |_| Message::Nothing,
-                            ));
-                        } else {
-                            commands.push(Command::perform(
-                                perform_commands(
-                                    action,
-                                    i,
-                                    self.phone_packages[i_user][i].removal.to_string(),
-                                ),
-                                Message::ChangePackageState,
-                            ));
-                        }
+                        commands.push(Command::perform(
+                            perform_adb_commands(
+                                action,
+                                i,
+                                self.phone_packages[i_user][i].removal.to_string(),
+                            ),
+                            if j == 0 {
+                                Message::ChangePackageState
+                            } else {
+                                |_| Message::Nothing
+                            },
+                        ));
                     }
                 }
                 Command::batch(commands)
