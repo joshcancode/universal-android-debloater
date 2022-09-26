@@ -1,7 +1,7 @@
-use crate::core::config::{Config, DeviceSettings, GeneralSettings, BackupSettings};
+use crate::core::config::{BackupSettings, Config, DeviceSettings, GeneralSettings};
 use crate::core::save::{backup_phone, list_available_backup_user, restore_backup};
 use crate::core::save::{list_available_backups, BACKUP_DIR};
-use crate::core::sync::{User, Phone};
+use crate::core::sync::{Phone, User};
 use crate::core::theme::Theme;
 use crate::core::utils::{open_url, string_to_theme};
 use crate::gui::perform_adb_commands;
@@ -47,7 +47,7 @@ impl Settings {
     pub fn update(
         &mut self,
         phone: &Phone,
-        packages: &Vec<Vec<PackageRow>>,
+        packages: &[Vec<PackageRow>],
         msg: Message,
     ) -> Command<Message> {
         match msg {
@@ -82,7 +82,7 @@ impl Settings {
                 Command::none()
             }
             Message::LoadDeviceSettings => {
-                let backups = list_available_backups(&*BACKUP_DIR.join(phone.adb_id.clone()));
+                let backups = list_available_backups(&BACKUP_DIR.join(phone.adb_id.clone()));
                 match Config::load_configuration_file()
                     .devices
                     .iter()
@@ -94,7 +94,7 @@ impl Settings {
                             backups: backups.clone(),
                             selected: backups.first().cloned(),
                             users: phone.user_list.clone(),
-                            selected_user: phone.user_list.first().copied()
+                            selected_user: phone.user_list.first().copied(),
                         };
                     }
                     None => {
@@ -107,7 +107,7 @@ impl Settings {
                                 selected: backups.first().cloned(),
                                 users: phone.user_list.clone(),
                                 selected_user: phone.user_list.first().copied(),
-                            }
+                            },
                         }
                     }
                 };
@@ -115,20 +115,21 @@ impl Settings {
             }
             Message::BackupSelected(path) => {
                 self.device.backup.selected = Some(path.clone());
-                list_available_backup_user(path);
+                self.device.backup.users = list_available_backup_user(path);
                 Command::none()
             }
             Message::BackupDevice => Command::perform(
                 backup_phone(
                     phone.user_list.clone(),
                     self.device.device_id.clone(),
-                    packages.clone(),
+                    packages.to_vec(),
                 ),
                 Message::DeviceBackedUp,
             ),
             Message::DeviceBackedUp(_) => {
+                error!("[BACKUP] Backup done");
                 self.device.backup.backups =
-                    list_available_backups(&*BACKUP_DIR.join(phone.adb_id.clone()));
+                    list_available_backups(&BACKUP_DIR.join(phone.adb_id.clone()));
                 self.device.backup.selected = self.device.backup.backups.first().cloned();
                 Command::none()
             }
@@ -137,24 +138,18 @@ impl Settings {
                 Command::none()
             }
             Message::RestoreDevice => {
-                let actions = restore_backup(
-                    self.device.backup.selected.as_ref().unwrap().to_string(),
-                    self.device.backup.selected_user
-                ).unwrap();
+                let actions = restore_backup(phone, &self.device).unwrap();
 
                 let mut commands = vec![];
                 for action in actions {
                     commands.push(Command::perform(
                         perform_adb_commands(action, 0, "Restore".to_string()),
-                        |_| Message::Nothing
-                        )
-                    );
+                        |_| Message::Nothing,
+                    ));
                 }
                 Command::batch(commands)
             }
-            Message::Nothing => {
-                Command::none()
-            }
+            Message::Nothing => Command::none(),
         }
     }
 
@@ -285,9 +280,9 @@ impl Settings {
 
         let backup_user_pick_list = pick_list(
             self.device.backup.users.clone(),
-            self.device.backup.selected_user.clone(),
+            self.device.backup.selected_user,
             Message::BackupUserSelected,
-        );
+        ).width(Length::Units(75));
 
         let backup_btn = button("Backup")
             .padding(5)
@@ -312,8 +307,8 @@ impl Settings {
                 } else {
                     row![
                         backup_pick_list,
-                        restore_btn,
                         backup_user_pick_list,
+                        restore_btn,
                         "Restore the state of the phone",
                     ]
                     .spacing(10)

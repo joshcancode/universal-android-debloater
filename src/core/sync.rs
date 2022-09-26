@@ -3,12 +3,11 @@ use crate::core::uad_lists::PackageState;
 use crate::gui::widgets::package_row::PackageRow;
 use regex::Regex;
 use retry::{delay::Fixed, retry, OperationResult};
-use static_init::dynamic;
 use serde::{Deserialize, Serialize};
+use static_init::dynamic;
 use std::collections::HashSet;
 use std::env;
 use std::process::Command;
-
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -149,7 +148,7 @@ impl From<&PackageRow> for CorePackage {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     RestoreDevice,
-    Misc
+    Misc,
 }
 
 pub fn action_handler(
@@ -157,7 +156,7 @@ pub fn action_handler(
     package: &CorePackage,
     phone: &Phone,
     settings: &DeviceSettings,
-    action: &Action
+    action: &Action,
 ) -> Vec<String> {
     // https://github.com/0x192/universal-android-debloater/wiki/ADB-reference
     // ALWAYS PUT THE COMMAND THAT CHANGES THE PACKAGE STATE FIRST!
@@ -197,13 +196,13 @@ pub fn action_handler(
     } else {
         match action {
             Action::Misc => {
-                if settings.multi_user_mode  {
+                if settings.multi_user_mode {
                     request_builder(commands, &package.name, &phone.user_list)
                 } else {
                     request_builder(commands, &package.name, &[*selected_user])
                 }
             }
-            Action::RestoreDevice => request_builder(commands, &package.name, &phone.user_list)
+            Action::RestoreDevice => request_builder(commands, &package.name, &phone.user_list),
         }
     }
 }

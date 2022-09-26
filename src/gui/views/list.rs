@@ -1,5 +1,5 @@
-use crate::core::save::{backup_phone, import_selection};
-use crate::core::sync::{action_handler, Phone, User, Action as AdbAction };
+use crate::core::save::backup_phone;
+use crate::core::sync::{action_handler, Action as AdbAction, Phone, User};
 use crate::core::theme::Theme;
 use crate::core::uad_lists::{
     load_debloat_lists, Opposite, Package, PackageState, Removal, UadList, UadListState,
@@ -116,11 +116,6 @@ impl List {
                 self.selected_list = Some(UadList::All);
                 self.selected_user = Some(User { id: 0, index: 0 });
                 Self::filter_package_lists(self);
-
-                match import_selection(&mut self.phone_packages[i_user], &mut self.selection) {
-                    Ok(_) => info!("Custom selection has been successfully imported"),
-                    Err(err) => warn!("No custom selection imported: {}", err),
-                };
                 self.loading_state = LoadingState::Ready;
                 Command::none()
             }
@@ -206,7 +201,7 @@ impl List {
                             &package.into(),
                             selected_device,
                             &settings.device,
-                            &AdbAction::Misc
+                            &AdbAction::Misc,
                         );
 
                         for (i, action) in actions.into_iter().enumerate() {
@@ -259,7 +254,7 @@ impl List {
                         &(&self.phone_packages[i_user][i]).into(),
                         selected_device,
                         &settings.device,
-                        &AdbAction::Misc
+                        &AdbAction::Misc,
                     );
                     for (j, action) in actions.into_iter().enumerate() {
                         // Only the first command can change the package state

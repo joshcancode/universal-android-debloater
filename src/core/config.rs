@@ -1,4 +1,4 @@
-use crate::core::sync::{User, get_android_sdk};
+use crate::core::sync::{get_android_sdk, User};
 use crate::gui::views::settings::Settings;
 use crate::CONFIG_DIR;
 use serde::{Deserialize, Serialize};
@@ -24,7 +24,7 @@ pub struct BackupSettings {
     pub backups: Vec<String>,
     pub selected: Option<String>,
     pub users: Vec<User>,
-    pub selected_user: Option<User>
+    pub selected_user: Option<User>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -35,7 +35,6 @@ pub struct DeviceSettings {
     #[serde(skip)]
     pub backup: BackupSettings,
 }
-
 
 impl Default for DeviceSettings {
     fn default() -> Self {

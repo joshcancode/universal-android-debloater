@@ -1,13 +1,10 @@
-use crate::core::sync::{action_handler, User, Action, CorePackage};
-use crate::core::uad_lists::PackageState;
-use crate::core::utils::update_selection_count;
-use crate::gui::views::list::Selection;
+use crate::core::config::DeviceSettings;
+use crate::core::sync::{action_handler, Action, CorePackage, Phone, User};
 use crate::gui::widgets::package_row::PackageRow;
 use crate::CACHE_DIR;
 use serde::{Deserialize, Serialize};
 use static_init::dynamic;
 use std::fs;
-use std::io::{self, prelude::*, BufReader};
 use std::path::{Path, PathBuf};
 
 #[dynamic]
@@ -43,19 +40,17 @@ pub async fn backup_phone(
         };
 
         for p in phone_packages[u.index].clone() {
-            user_backup.packages.push(
-                CorePackage {
-                    name: p.name.clone(),
-                    state: p.state
-                }
-            )
+            user_backup.packages.push(CorePackage {
+                name: p.name.clone(),
+                state: p.state,
+            })
         }
         backup.users.push(user_backup);
     }
 
     match serde_json::to_string_pretty(&backup) {
         Ok(json) => {
-            let backup_path = &*BACKUP_DIR.join(device_id.clone());
+            let backup_path = &*BACKUP_DIR.join(device_id);
 
             if let Err(e) = fs::create_dir_all(backup_path) {
                 error!("BACKUP: could not create backup dir: {}", e);
@@ -93,7 +88,7 @@ pub fn list_available_backups(dir: &Path) -> Vec<String> {
     }
 }
 
-pub fn list_available_backup_user(backup: String) -> Result<Vec<u16>,()> {
+pub fn list_available_backup_user(backup: String) -> Vec<User> {
     match fs::read_to_string(backup) {
         Ok(data) => {
             let phone_backup: PhoneBackup =
@@ -101,35 +96,38 @@ pub fn list_available_backup_user(backup: String) -> Result<Vec<u16>,()> {
 
             let mut users = vec![];
             for u in phone_backup.users {
-                users.push(u.id);
+                users.push(User { id: u.id, index: 0 });
             }
-            Ok(users)
+            users
         }
         Err(e) => {
             error!("[BACKUP]: Selected backup file not found: {}", e);
-            Err(())
+            vec![]
         }
     }
 }
 
-pub fn restore_backup(backup: String, selected_user: Option<User>) -> Result<Vec<String>, ()> {
-    match fs::read_to_string(backup) {
+pub fn restore_backup(
+    selected_device: &Phone,
+    settings: &DeviceSettings,
+) -> Result<Vec<String>, ()> {
+    match fs::read_to_string(settings.backup.selected.as_ref().unwrap()) {
         Ok(data) => {
             let phone_backup: PhoneBackup =
                 serde_json::from_str(&data).expect("Unable to parse backup file");
 
-            let commands = vec![];
-            /*for u in phone_backup.users {
-                for packages in u {
-                    commands.push(action_handler(
-                        selected_user.unwrap(),
-                        package,
+            let mut commands = vec![];
+            for u in phone_backup.users {
+                for packages in u.packages {
+                    commands.extend(action_handler(
+                        &settings.backup.selected_user.unwrap(),
+                        &packages,
                         selected_device,
-                        &settings.device,
-                        Action::RestoreDevice
+                        settings,
+                        &Action::RestoreDevice,
                     ));
                 }
-            }*/
+            }
             Ok(commands)
         }
         Err(e) => {
@@ -137,43 +135,4 @@ pub fn restore_backup(backup: String, selected_user: Option<User>) -> Result<Vec
             Err(())
         }
     }
-}
-
-// To be removed
-pub async fn export_selection(packages: Vec<PackageRow>) -> Result<bool, String> {
-    let selected = packages
-        .iter()
-        .filter(|p| p.selected)
-        .map(|p| p.name.clone())
-        .collect::<Vec<String>>()
-        .join("\n");
-
-    match fs::write("uad_exported_selection.txt", selected) {
-        Ok(_) => Ok(true),
-        Err(err) => Err(err.to_string()),
-    }
-}
-
-// To be removed
-pub fn import_selection(packages: &mut [PackageRow], selection: &mut Selection) -> io::Result<()> {
-    let file = fs::File::open("uad_exported_selection.txt")?;
-    let reader = BufReader::new(file);
-    let imported_selection: Vec<String> = reader
-        .lines()
-        .map(|l| l.expect("Could not parse line"))
-        .collect();
-
-    *selection = Selection::default(); // should already be empty normally
-
-    for (i, p) in packages.iter_mut().enumerate() {
-        if imported_selection.contains(&p.name) {
-            p.selected = true;
-            selection.selected_packages.push(i);
-            update_selection_count(selection, p.state, true);
-        } else {
-            p.selected = false;
-        }
-    }
-
-    Ok(())
 }
