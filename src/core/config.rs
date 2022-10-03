@@ -1,4 +1,5 @@
 use crate::core::sync::{get_android_sdk, User};
+use crate::core::utils::DisplayablePath;
 use crate::gui::views::settings::Settings;
 use crate::CONFIG_DIR;
 use serde::{Deserialize, Serialize};
@@ -21,8 +22,8 @@ pub struct GeneralSettings {
 
 #[derive(Default, Debug, Clone)]
 pub struct BackupSettings {
-    pub backups: Vec<String>,
-    pub selected: Option<String>,
+    pub backups: Vec<DisplayablePath>,
+    pub selected: Option<DisplayablePath>,
     pub users: Vec<User>,
     pub selected_user: Option<User>,
 }

@@ -8,9 +8,9 @@ use crate::gui::widgets::package_row::PackageRow;
 use chrono::offset::Utc;
 use chrono::DateTime;
 use std::collections::HashMap;
-use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
+use std::{fmt, fs};
 
 pub fn fetch_packages(
     uad_lists: &HashMap<String, Package>,
@@ -163,5 +163,29 @@ pub async fn perform_adb_commands(action: String, i: usize, label: String) -> Re
             }
             Err(())
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DisplayablePath {
+    pub path: PathBuf,
+}
+
+impl fmt::Display for DisplayablePath {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let stem = match self.path.file_stem() {
+            Some(p) => match p.to_os_string().into_string() {
+                Ok(stem) => stem,
+                Err(e) => {
+                    error!("[PATH ENCODING]: {:?}", e);
+                    "[PATH ENCODING ERROR]".to_string()
+                }
+            },
+            None => {
+                error!("[PATH STEM]: No file stem found");
+                "[File steam not found]".to_string()
+            }
+        };
+        write!(f, "{}", stem)
     }
 }

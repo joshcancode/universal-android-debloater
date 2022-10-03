@@ -1,5 +1,6 @@
 use crate::core::config::DeviceSettings;
 use crate::core::sync::{action_handler, Action, CorePackage, Phone, User};
+use crate::core::utils::DisplayablePath;
 use crate::gui::widgets::package_row::PackageRow;
 use crate::CACHE_DIR;
 use serde::{Deserialize, Serialize};
@@ -57,7 +58,7 @@ pub async fn backup_phone(
                 return Err(e.to_string());
             };
 
-            let backup_filename = format!("{}.json", chrono::Local::now().format("%Y-%m-%d-%H"));
+            let backup_filename = format!("{}.json", chrono::Local::now().format("%Y-%m-%d-%H-%M"));
 
             match fs::write(backup_path.join(backup_filename), json) {
                 Ok(_) => Ok(()),
@@ -71,25 +72,18 @@ pub async fn backup_phone(
     }
 }
 
-pub fn list_available_backups(dir: &Path) -> Vec<String> {
+pub fn list_available_backups(dir: &Path) -> Vec<DisplayablePath> {
     match fs::read_dir(dir) {
         Ok(files) => files
             .filter_map(|e| e.ok())
-            .map(|e| {
-                e.path()
-                    .file_stem()
-                    .unwrap()
-                    .to_os_string()
-                    .into_string()
-                    .unwrap()
-            })
+            .map(|e| DisplayablePath { path: e.path() })
             .collect::<Vec<_>>(),
         Err(_) => vec![],
     }
 }
 
-pub fn list_available_backup_user(backup: String) -> Vec<User> {
-    match fs::read_to_string(backup) {
+pub fn list_available_backup_user(backup: DisplayablePath) -> Vec<User> {
+    match fs::read_to_string(backup.path) {
         Ok(data) => {
             let phone_backup: PhoneBackup =
                 serde_json::from_str(&data).expect("Unable to parse backup file");
@@ -107,11 +101,14 @@ pub fn list_available_backup_user(backup: String) -> Vec<User> {
     }
 }
 
+
+// TODO: we need to change the way package state change are handled
+// Better to try to match the wanted state instead of applying the "reverse" ADB command
 pub fn restore_backup(
     selected_device: &Phone,
     settings: &DeviceSettings,
-) -> Result<Vec<String>, ()> {
-    match fs::read_to_string(settings.backup.selected.as_ref().unwrap()) {
+) -> Result<Vec<String>, String> {
+    match fs::read_to_string(settings.backup.selected.as_ref().unwrap().path.clone()) {
         Ok(data) => {
             let phone_backup: PhoneBackup =
                 serde_json::from_str(&data).expect("Unable to parse backup file");
@@ -130,9 +127,6 @@ pub fn restore_backup(
             }
             Ok(commands)
         }
-        Err(e) => {
-            error!("[BACKUP]: Backup file not found: {}", e);
-            Err(())
-        }
+        Err(e) => Err("[BACKUP]: ".to_owned() + &e.to_string()),
     }
 }

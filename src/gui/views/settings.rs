@@ -3,7 +3,7 @@ use crate::core::save::{backup_phone, list_available_backup_user, restore_backup
 use crate::core::save::{list_available_backups, BACKUP_DIR};
 use crate::core::sync::{Phone, User};
 use crate::core::theme::Theme;
-use crate::core::utils::{open_url, string_to_theme};
+use crate::core::utils::{open_url, string_to_theme, DisplayablePath};
 use crate::gui::perform_adb_commands;
 use crate::gui::style;
 use crate::gui::widgets::package_row::PackageRow;
@@ -35,7 +35,7 @@ pub enum Message {
     MultiUserMode(bool),
     ApplyTheme(Theme),
     UrlPressed(PathBuf),
-    BackupSelected(String),
+    BackupSelected(DisplayablePath),
     BackupDevice,
     RestoreDevice,
     DeviceBackedUp(Result<(), String>),
@@ -113,9 +113,9 @@ impl Settings {
                 };
                 Command::none()
             }
-            Message::BackupSelected(path) => {
-                self.device.backup.selected = Some(path.clone());
-                self.device.backup.users = list_available_backup_user(path);
+            Message::BackupSelected(d_path) => {
+                self.device.backup.selected = Some(d_path.clone());
+                self.device.backup.users = list_available_backup_user(d_path);
                 Command::none()
             }
             Message::BackupDevice => Command::perform(
@@ -282,7 +282,8 @@ impl Settings {
             self.device.backup.users.clone(),
             self.device.backup.selected_user,
             Message::BackupUserSelected,
-        ).width(Length::Units(75));
+        )
+        .width(Length::Units(75));
 
         let backup_btn = button("Backup")
             .padding(5)
