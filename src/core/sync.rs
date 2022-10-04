@@ -151,6 +151,64 @@ pub enum Action {
     Misc,
 }
 
+pub fn backup_commands(
+    selected_user: &User,
+    package: &CorePackage,
+    phone: &Phone,
+    settings: &DeviceSettings,
+    action: &Action,
+) -> Vec<String> {
+
+}
+
+pub fn restore_pkg(
+    selected_user: &User,
+    package: &CorePackage,
+    phone: &Phone,
+) -> Vec<String> {
+    match phone.android_sdk {
+        i if i >= 23 => vec!["cmd package install-existing"],
+        21 | 22 => vec!["pm unhide"],
+        19 | 20 => vec!["pm unblock", "pm clear"],
+        _ => vec![], // Impossible action already prevented by the GUI
+    }
+}
+
+pub fn apply_pkg_state_commands(state: PackageState, wanted_state: PackageState, sdk)-> Vec<String> {
+    match wanted_state {
+        PackageState::Enabled => {
+            match state {
+                PackageState::Disabled => match sdk {
+                    i if i >= 23 => vec!["pm enable"],
+                    _ => vec!["pm enable"],
+                }
+                PackageState::Uninstalled => match sdk {
+                    i if i >= 23 => vec!["cmd package install-existing"],
+                    21 | 22 => vec!["pm unhide"],
+                    19 | 20 => vec!["pm unblock", "pm clear"],
+                    _ => vec![], // Impossible action already prevented by the GUI
+                }
+                PackageState::Enabled => vec![]
+            }
+        }
+        PackageState::Disabled => {
+            match sdk {
+                sdk if sdk >= 23 => vec!["pm disable-user", "am force-stop", "pm clear"],
+                _ => vec![],
+            }
+        }
+        PackageState::Uninstalled => {
+            match sdk {
+                sdk if sdk >= 23 => vec!["pm uninstall"], // > Android Marshmallow (6.0)
+                21 | 22 => vec!["pm hide", "pm clear"],  // Android Lollipop (5.x)
+                19 | 20 => vec!["pm block", "pm clear"], // Android KitKat (4.4/4.4W)
+                _ => vec!["pm uninstall"], // Disable mode is unavailable on older devices because the specific ADB commands need root
+            }
+        }
+    }
+}
+
+
 pub fn action_handler(
     selected_user: &User,
     package: &CorePackage,
@@ -185,8 +243,7 @@ pub fn action_handler(
         // `pm enable` doesn't work without root before Android 6.x and this is most likely the same on even older devices too.
         // Should never happen as disable_mode is unavailable on older devices
         PackageState::Disabled => match phone.android_sdk {
-            i if i >= 23 => vec!["pm enable"],
-            _ => vec!["pm enable"],
+           
         },
         PackageState::All => vec![], // This can't happen (like... never)
     };

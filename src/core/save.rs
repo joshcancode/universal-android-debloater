@@ -116,7 +116,7 @@ pub fn restore_backup(
             let mut commands = vec![];
             for u in phone_backup.users {
                 for packages in u.packages {
-                    commands.extend(action_handler(
+                    commands.extend(change_pkg_state_commands(
                         &settings.backup.selected_user.unwrap(),
                         &packages,
                         selected_device,
@@ -128,5 +128,66 @@ pub fn restore_backup(
             Ok(commands)
         }
         Err(e) => Err("[BACKUP]: ".to_owned() + &e.to_string()),
+    }
+}
+
+pub fn apply_pkg_state_commands(
+    selected_user: &User,
+    backup_pkg: &Option<CorePackage>,
+    phone_pkg: &CorePackage
+    phone: &Phone,
+    settings: &DeviceSettings,
+    action: &Action,
+) -> Vec<String> {
+
+    if phone_pkg.state == backup_pkg.state {
+        return vec![];
+    }
+
+    let commands = match backup_pkg.state {
+        PackageState::Enabled => {
+            let commands = match phone_pkg.state {
+                PackageState::Uninstalled => vec!["pm disable-user", "am force-stop", "pm clear"],
+                PackageState::Disabled => vec!["pm uninstall"],
+                _ => vec![]
+            };
+
+            match phone.android_sdk {
+                sdk if sdk >= 23 => commands,            // > Android Marshmallow (6.0)
+                21 | 22 => vec!["pm hide", "pm clear"],  // Android Lollipop (5.x)
+                19 | 20 => vec!["pm block", "pm clear"], // Android KitKat (4.4/4.4W)
+                _ => vec!["pm uninstall"], // Disable mode is unavailable on older devices because the specific ADB commands need root
+            }
+        }
+        PackageState::Uninstalled => {
+            match phone.android_sdk {
+                i if i >= 23 => vec!["cmd package install-existing"],
+                21 | 22 => vec!["pm unhide"],
+                19 | 20 => vec!["pm unblock", "pm clear"],
+                _ => vec![], // Impossible action already prevented by the GUI
+            }
+        }
+        // `pm enable` doesn't work without root before Android 6.x and this is most likely the same on even older devices too.
+        // Should never happen as disable_mode is unavailable on older devices
+        PackageState::Disabled => match phone.android_sdk {
+            i if i >= 23 => vec!["pm enable"],
+            _ => vec!["pm enable"],
+        },
+        PackageState::All => vec![], // This can't happen (like... never)
+    };
+
+    if phone.android_sdk < 21 {
+        request_builder(commands, &package.name, &[])
+    } else {
+        match action {
+            Action::Misc => {
+                if settings.multi_user_mode {
+                    request_builder(commands, &package.name, &phone.user_list)
+                } else {
+                    request_builder(commands, &package.name, &[*selected_user])
+                }
+            }
+            Action::RestoreDevice => request_builder(commands, &package.name, &phone.user_list),
+        }
     }
 }
