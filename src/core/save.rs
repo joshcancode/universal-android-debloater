@@ -1,5 +1,5 @@
 use crate::core::config::DeviceSettings;
-use crate::core::sync::{action_handler, Action, CorePackage, Phone, User};
+use crate::core::sync::{apply_pkg_state_commands, CorePackage, Phone, User};
 use crate::core::utils::DisplayablePath;
 use crate::gui::widgets::package_row::PackageRow;
 use crate::CACHE_DIR;
@@ -101,11 +101,11 @@ pub fn list_available_backup_user(backup: DisplayablePath) -> Vec<User> {
     }
 }
 
-
 // TODO: we need to change the way package state change are handled
 // Better to try to match the wanted state instead of applying the "reverse" ADB command
 pub fn restore_backup(
     selected_device: &Phone,
+    packages: &[Vec<PackageRow>],
     settings: &DeviceSettings,
 ) -> Result<Vec<String>, String> {
     match fs::read_to_string(settings.backup.selected.as_ref().unwrap().path.clone()) {
@@ -115,79 +115,40 @@ pub fn restore_backup(
 
             let mut commands = vec![];
             for u in phone_backup.users {
-                for packages in u.packages {
-                    commands.extend(change_pkg_state_commands(
+                if u.id != settings.backup.selected_user.unwrap().id {
+                    continue;
+                }
+
+                let mut _index = 0;
+                match selected_device.user_list.iter().find(|x| x.id == u.id) {
+                    Some(i) => _index = i.index,
+                    None => return Err(format!("[BACKUP]: user {} doesn't exist", u.id)),
+                };
+
+                for backup_package in u.packages {
+                    let package: CorePackage;
+                    match packages[_index]
+                        .iter()
+                        .find(|x| x.name == backup_package.name)
+                    {
+                        Some(p) => package = p.into(),
+                        None => {
+                            return Err(format!(
+                                "[BACKUP]: package {} is not found for user {}",
+                                backup_package.name, u.id
+                            ))
+                        }
+                    }
+                    commands.extend(apply_pkg_state_commands(
+                        &package,
+                        &backup_package.state,
                         &settings.backup.selected_user.unwrap(),
-                        &packages,
                         selected_device,
-                        settings,
-                        &Action::RestoreDevice,
                     ));
                 }
             }
             Ok(commands)
         }
         Err(e) => Err("[BACKUP]: ".to_owned() + &e.to_string()),
-    }
-}
-
-pub fn apply_pkg_state_commands(
-    selected_user: &User,
-    backup_pkg: &Option<CorePackage>,
-    phone_pkg: &CorePackage
-    phone: &Phone,
-    settings: &DeviceSettings,
-    action: &Action,
-) -> Vec<String> {
-
-    if phone_pkg.state == backup_pkg.state {
-        return vec![];
-    }
-
-    let commands = match backup_pkg.state {
-        PackageState::Enabled => {
-            let commands = match phone_pkg.state {
-                PackageState::Uninstalled => vec!["pm disable-user", "am force-stop", "pm clear"],
-                PackageState::Disabled => vec!["pm uninstall"],
-                _ => vec![]
-            };
-
-            match phone.android_sdk {
-                sdk if sdk >= 23 => commands,            // > Android Marshmallow (6.0)
-                21 | 22 => vec!["pm hide", "pm clear"],  // Android Lollipop (5.x)
-                19 | 20 => vec!["pm block", "pm clear"], // Android KitKat (4.4/4.4W)
-                _ => vec!["pm uninstall"], // Disable mode is unavailable on older devices because the specific ADB commands need root
-            }
-        }
-        PackageState::Uninstalled => {
-            match phone.android_sdk {
-                i if i >= 23 => vec!["cmd package install-existing"],
-                21 | 22 => vec!["pm unhide"],
-                19 | 20 => vec!["pm unblock", "pm clear"],
-                _ => vec![], // Impossible action already prevented by the GUI
-            }
-        }
-        // `pm enable` doesn't work without root before Android 6.x and this is most likely the same on even older devices too.
-        // Should never happen as disable_mode is unavailable on older devices
-        PackageState::Disabled => match phone.android_sdk {
-            i if i >= 23 => vec!["pm enable"],
-            _ => vec!["pm enable"],
-        },
-        PackageState::All => vec![], // This can't happen (like... never)
-    };
-
-    if phone.android_sdk < 21 {
-        request_builder(commands, &package.name, &[])
-    } else {
-        match action {
-            Action::Misc => {
-                if settings.multi_user_mode {
-                    request_builder(commands, &package.name, &phone.user_list)
-                } else {
-                    request_builder(commands, &package.name, &[*selected_user])
-                }
-            }
-            Action::RestoreDevice => request_builder(commands, &package.name, &phone.user_list),
-        }
     }
 }

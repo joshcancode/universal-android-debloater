@@ -138,7 +138,7 @@ impl Settings {
                 Command::none()
             }
             Message::RestoreDevice => {
-                let actions = restore_backup(phone, &self.device).unwrap();
+                let actions = restore_backup(phone, packages, &self.device).unwrap();
 
                 let mut commands = vec![];
                 for action in actions {

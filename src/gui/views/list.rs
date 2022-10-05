@@ -1,5 +1,5 @@
 use crate::core::save::backup_phone;
-use crate::core::sync::{action_handler, Action as AdbAction, Phone, User};
+use crate::core::sync::{action_handler, Phone, User};
 use crate::core::theme::Theme;
 use crate::core::uad_lists::{
     load_debloat_lists, Opposite, Package, PackageState, Removal, UadList, UadListState,
@@ -201,7 +201,6 @@ impl List {
                             &package.into(),
                             selected_device,
                             &settings.device,
-                            &AdbAction::Misc,
                         );
 
                         for (i, action) in actions.into_iter().enumerate() {
@@ -254,7 +253,6 @@ impl List {
                         &(&self.phone_packages[i_user][i]).into(),
                         selected_device,
                         &settings.device,
-                        &AdbAction::Misc,
                     );
                     for (j, action) in actions.into_iter().enumerate() {
                         // Only the first command can change the package state
