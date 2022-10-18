@@ -141,7 +141,12 @@ pub fn format_diff_time_from_now(date: DateTime<Utc>) -> String {
     }
 }
 
-pub async fn perform_adb_commands(action: String, i: usize, label: String) -> Result<usize, ()> {
+#[derive(Debug, Clone)]
+pub struct CommandResult {
+    pub index: usize,
+    pub last_command: bool
+}
+pub async fn perform_adb_commands(action: String, i: usize, label: String, last_command: bool) -> Result<CommandResult, ()> {
     match adb_shell_command(true, &action) {
         Ok(o) => {
             // On old devices, adb commands can return the '0' exit code even if there
@@ -154,7 +159,7 @@ pub async fn perform_adb_commands(action: String, i: usize, label: String) -> Re
                 Err(())
             } else {
                 info!("[{}] {} -> {}", label, action, o);
-                Ok(i)
+                Ok(CommandResult { index: i, last_command })
             }
         }
         Err(err) => {

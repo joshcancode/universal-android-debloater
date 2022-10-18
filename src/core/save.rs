@@ -103,11 +103,17 @@ pub fn list_available_backup_user(backup: DisplayablePath) -> Vec<User> {
 
 // TODO: we need to change the way package state change are handled
 // Better to try to match the wanted state instead of applying the "reverse" ADB command
+
+pub struct BackupPackage {
+    pub index: usize,
+    pub commands: Vec<String>
+}
+
 pub fn restore_backup(
     selected_device: &Phone,
     packages: &[Vec<PackageRow>],
     settings: &DeviceSettings,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<BackupPackage>, String> {
     match fs::read_to_string(settings.backup.selected.as_ref().unwrap().path.clone()) {
         Ok(data) => {
             let phone_backup: PhoneBackup =
@@ -125,7 +131,7 @@ pub fn restore_backup(
                     None => return Err(format!("[BACKUP]: user {} doesn't exist", u.id)),
                 };
 
-                for backup_package in u.packages {
+                for (i, backup_package) in u.packages.iter().enumerate() {
                     let package: CorePackage;
                     match packages[_index]
                         .iter()
@@ -139,14 +145,18 @@ pub fn restore_backup(
                             ))
                         }
                     }
-                    commands.extend(apply_pkg_state_commands(
-                        &package,
-                        &backup_package.state,
-                        &settings.backup.selected_user.unwrap(),
-                        selected_device,
-                    ));
+                    commands.push(BackupPackage {
+                        index: i,
+                        commands: apply_pkg_state_commands(
+                            &package,
+                            &backup_package.state,
+                            &settings.backup.selected_user.unwrap(),
+                            selected_device,
+                        )
+                    });
                 }
             }
+            commands.push(BackupPackage { index: 0, commands: vec![] } );
             Ok(commands)
         }
         Err(e) => Err("[BACKUP]: ".to_owned() + &e.to_string()),

@@ -4,7 +4,7 @@ use crate::core::theme::Theme;
 use crate::core::uad_lists::{
     load_debloat_lists, Opposite, Package, PackageState, Removal, UadList, UadListState,
 };
-use crate::core::utils::{fetch_packages, perform_adb_commands, update_selection_count};
+use crate::core::utils::{CommandResult, fetch_packages, perform_adb_commands, update_selection_count};
 use crate::gui::style;
 use std::collections::HashMap;
 use std::env;
@@ -30,14 +30,20 @@ pub enum Action {
     Restore,
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub enum LoadingState {
-    DownloadingList,
-    #[default]
-    FindingPhones,
-    LoadingPackages,
-    _UpdatingUad,
-    Ready,
+    DownloadingList(String),
+    FindingPhones(String),
+    LoadingPackages(String),
+    _UpdatingUad(String),
+    Ready(String),
+    RestoringDevice(String),
+}
+
+impl Default for LoadingState {
+    fn default() -> Self {
+        Self::FindingPhones("".to_string())
+    }
 }
 
 #[derive(Default, Debug, Clone)]
@@ -60,6 +66,7 @@ pub struct List {
 pub enum Message {
     LoadUadList(bool),
     LoadPhonePackages((HashMap<String, Package>, UadListState)),
+    RestoringDevice(Result<CommandResult, ()>),
     ApplyFilters(Vec<Vec<PackageRow>>),
     SearchInputChanged(String),
     ToggleAllSelected(bool),
@@ -71,7 +78,7 @@ pub enum Message {
     ExportSelectionPressed,
     List(usize, RowMessage),
     ExportedSelection(Result<(), String>),
-    ChangePackageState(Result<usize, ()>),
+    ChangePackageState(Result<CommandResult, ()>),
     Nothing,
 }
 
@@ -85,6 +92,19 @@ impl List {
     ) -> Command<Message> {
         let i_user = self.selected_user.unwrap_or(User { id: 0, index: 0 }).index;
         match message {
+            Message::RestoringDevice(output) => {
+                if let Ok(res) = output {
+                    println!("{}", res.last_command);
+                    self.loading_state = if res.last_command {
+                        LoadingState::Ready("".to_string())
+                    } else {
+                        LoadingState::RestoringDevice(self.phone_packages[i_user][res.index].name.clone())
+                    };
+                } else {
+                    self.loading_state = LoadingState::RestoringDevice("Error [TODO]".to_string());
+                }
+                Command::none()
+            }
             Message::LoadUadList(remote) => {
                 info!("{:-^65}", "-");
                 info!(
@@ -92,7 +112,7 @@ impl List {
                     selected_device.android_sdk, selected_device.model
                 );
                 info!("{:-^65}", "-");
-                self.loading_state = LoadingState::DownloadingList;
+                self.loading_state = LoadingState::DownloadingList("".to_string());
                 Command::perform(
                     Self::init_apps_view(remote, selected_device.clone()),
                     Message::LoadPhonePackages,
@@ -100,7 +120,7 @@ impl List {
             }
             Message::LoadPhonePackages(list_box) => {
                 let (uad_list, list_state) = list_box;
-                self.loading_state = LoadingState::LoadingPackages;
+                self.loading_state = LoadingState::LoadingPackages("".to_string());
                 self.uad_lists = uad_list.clone();
                 *list_update_state = list_state;
                 Command::perform(
@@ -116,7 +136,7 @@ impl List {
                 self.selected_list = Some(UadList::All);
                 self.selected_user = Some(User { id: 0, index: 0 });
                 Self::filter_package_lists(self);
-                self.loading_state = LoadingState::Ready;
+                self.loading_state = LoadingState::Ready("".to_string());
                 Command::none()
             }
             Message::ToggleAllSelected(selected) => {
@@ -210,6 +230,7 @@ impl List {
                                     action,
                                     i_package,
                                     package.removal.to_string(),
+                                    false
                                 ),
                                 if i == 0 {
                                     Message::ChangePackageState
@@ -254,6 +275,7 @@ impl List {
                         selected_device,
                         &settings.device,
                     );
+
                     for (j, action) in actions.into_iter().enumerate() {
                         // Only the first command can change the package state
                         commands.push(Command::perform(
@@ -261,6 +283,7 @@ impl List {
                                 action,
                                 i,
                                 self.phone_packages[i_user][i].removal.to_string(),
+                                false
                             ),
                             if j == 0 {
                                 Message::ChangePackageState
@@ -301,7 +324,7 @@ impl List {
             }
             Message::ChangePackageState(res) => {
                 if let Ok(i) = res {
-                    let package = &mut self.phone_packages[i_user][i];
+                    let package = &mut self.phone_packages[i_user][i.index];
                     update_selection_count(&mut self.selection, package.state, false);
 
                     if !settings.device.multi_user_mode {
@@ -309,15 +332,15 @@ impl List {
                         package.selected = false;
                     } else {
                         for u in &selected_device.user_list {
-                            self.phone_packages[u.index][i].state = self.phone_packages[u.index][i]
+                            self.phone_packages[u.index][i.index].state = self.phone_packages[u.index][i.index]
                                 .state
                                 .opposite(settings.device.disable_mode);
-                            self.phone_packages[u.index][i].selected = false;
+                            self.phone_packages[u.index][i.index].selected = false;
                         }
                     }
                     self.selection
                         .selected_packages
-                        .drain_filter(|s_i| *s_i == i);
+                        .drain_filter(|s_i| *s_i == i.index);
                     Self::filter_package_lists(self);
                 }
                 Command::none()
@@ -331,24 +354,28 @@ impl List {
         settings: &Settings,
         selected_device: &Phone,
     ) -> Element<Message, Renderer<Theme>> {
-        match self.loading_state {
-            LoadingState::DownloadingList => {
+        match &self.loading_state {
+            LoadingState::DownloadingList(_) => {
                 let text = "Downloading latest UAD lists from Github. Please wait...";
                 waiting_view(settings, text, true)
             }
-            LoadingState::FindingPhones => {
+            LoadingState::FindingPhones(_) => {
                 let text = "Finding connected devices...";
                 waiting_view(settings, text, false)
             }
-            LoadingState::LoadingPackages => {
+            LoadingState::LoadingPackages(_) => {
                 let text = "Pulling packages from the device. Please wait...";
                 waiting_view(settings, text, false)
             }
-            LoadingState::_UpdatingUad => {
+            LoadingState::_UpdatingUad(_) => {
                 let text = "Updating UAD. Please wait...";
                 waiting_view(settings, text, false)
             }
-            LoadingState::Ready => {
+            LoadingState::RestoringDevice(output) => {
+                let text = format!("Restoring device: {}", output);
+                waiting_view(settings, &text, false)
+            }
+            LoadingState::Ready(_) => {
                 let search_packages = text_input(
                     "Search packages...",
                     &self.input_value,

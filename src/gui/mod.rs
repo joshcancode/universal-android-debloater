@@ -123,15 +123,15 @@ impl Application for UadGui {
                 Command::none()
             }
             Message::RefreshButtonPressed => {
-                self.apps_view.loading_state = ListLoadingState::FindingPhones;
+                self.apps_view.loading_state = ListLoadingState::FindingPhones("".to_string());
                 Command::perform(get_devices_list(), Message::LoadDevices)
             }
             Message::RebootButtonPressed => {
-                self.apps_view.loading_state = ListLoadingState::FindingPhones;
+                self.apps_view.loading_state = ListLoadingState::FindingPhones("".to_string());
                 self.selected_device = None;
                 self.devices_list = vec![];
                 Command::perform(
-                    perform_adb_commands("reboot".to_string(), 0, "ADB".to_string()),
+                    perform_adb_commands("reboot".to_string(), 0, "ADB".to_string(), true),
                     |_| Message::Nothing,
                 )
             }
@@ -144,28 +144,39 @@ impl Application for UadGui {
                     msg,
                 )
                 .map(Message::AppsAction),
-            Message::SettingsAction(msg) => self
-                .settings_view
-                .update(
+            Message::SettingsAction(msg) => {
+                match msg {
+                    SettingsMessage::RestoringDevice(ref output) => {
+                        self.view = View::List;
+                        self.apps_view.update(
+                            &mut self.settings_view,
+                            &mut self.selected_device.clone().unwrap_or_default(),
+                            &mut self.update_state.uad_list,
+                            AppsMessage::RestoringDevice(output.clone()));
+                    }
+                    _ => {}
+                }
+
+                self.settings_view.update(
                     &self.selected_device.clone().unwrap_or_default(),
                     &self.apps_view.phone_packages,
                     msg,
-                )
-                .map(Message::SettingsAction),
+                ).map(Message::SettingsAction)
+            }
             Message::AboutAction(msg) => {
                 self.about_view.update(msg.clone());
 
                 match msg {
                     AboutMessage::UpdateUadLists => {
                         self.update_state.uad_list = UadListState::Downloading;
-                        self.apps_view.loading_state = ListLoadingState::DownloadingList;
+                        self.apps_view.loading_state = ListLoadingState::DownloadingList("".to_string());
                         self.update(Message::AppsAction(AppsMessage::LoadUadList(true)))
                     }
                     AboutMessage::DoSelfUpdate => {
                         #[cfg(feature = "self-update")]
                         if self.update_state.self_update.latest_release.is_some() {
                             self.update_state.self_update.status = SelfUpdateStatus::Updating;
-                            self.apps_view.loading_state = ListLoadingState::_UpdatingUad;
+                            self.apps_view.loading_state = ListLoadingState::_UpdatingUad("".to_string());
                             let bin_name = bin_name().to_owned();
                             let release = self
                                 .update_state
@@ -197,7 +208,7 @@ impl Application for UadGui {
                     s_device.android_sdk, s_device.model
                 );
                 info!("{:-^65}", "-");
-                self.apps_view.loading_state = ListLoadingState::FindingPhones;
+                self.apps_view.loading_state = ListLoadingState::FindingPhones("".to_string());
                 self.update(Message::SettingsAction(SettingsMessage::LoadDeviceSettings));
                 self.update(Message::AppsAction(AppsMessage::LoadPhonePackages((
                     self.apps_view.uad_lists.clone(),
