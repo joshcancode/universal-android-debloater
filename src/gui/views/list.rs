@@ -1,10 +1,10 @@
 use crate::core::save::backup_phone;
-use crate::core::sync::{action_handler, Phone, User};
+use crate::core::sync::{action_handler, perform_adb_commands, CommandType, Phone, User};
 use crate::core::theme::Theme;
 use crate::core::uad_lists::{
     load_debloat_lists, Opposite, Package, PackageState, Removal, UadList, UadListState,
 };
-use crate::core::utils::{CommandResult, fetch_packages, perform_adb_commands, update_selection_count};
+use crate::core::utils::{fetch_packages, update_selection_count};
 use crate::gui::style;
 use std::collections::HashMap;
 use std::env;
@@ -22,6 +22,12 @@ pub struct Selection {
     pub enabled: u16,
     pub disabled: u16,
     pub selected_packages: Vec<usize>, // phone_packages indexes (= what you've selected)
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct PackageInfo {
+    pub index: usize,
+    pub removal: String,
 }
 
 #[derive(Debug, Clone)]
@@ -66,7 +72,7 @@ pub struct List {
 pub enum Message {
     LoadUadList(bool),
     LoadPhonePackages((HashMap<String, Package>, UadListState)),
-    RestoringDevice(Result<CommandResult, ()>),
+    RestoringDevice(Result<CommandType, ()>),
     ApplyFilters(Vec<Vec<PackageRow>>),
     SearchInputChanged(String),
     ToggleAllSelected(bool),
@@ -78,7 +84,7 @@ pub enum Message {
     ExportSelectionPressed,
     List(usize, RowMessage),
     ExportedSelection(Result<(), String>),
-    ChangePackageState(Result<CommandResult, ()>),
+    ChangePackageState(Result<CommandType, ()>),
     Nothing,
 }
 
@@ -94,12 +100,11 @@ impl List {
         match message {
             Message::RestoringDevice(output) => {
                 if let Ok(res) = output {
-                    println!("{}", res.last_command);
-                    self.loading_state = if res.last_command {
-                        LoadingState::Ready("".to_string())
-                    } else {
-                        LoadingState::RestoringDevice(self.phone_packages[i_user][res.index].name.clone())
-                    };
+                    if let CommandType::PackageManager(p) = res {
+                        self.loading_state = LoadingState::RestoringDevice(
+                            self.phone_packages[i_user][p.index].name.clone(),
+                        )
+                    }
                 } else {
                     self.loading_state = LoadingState::RestoringDevice("Error [TODO]".to_string());
                 }
@@ -224,14 +229,13 @@ impl List {
                         );
 
                         for (i, action) in actions.into_iter().enumerate() {
+                            let p_info = PackageInfo {
+                                index: i_package,
+                                removal: package.removal.to_string(),
+                            };
                             // Only the first command can change the package state
                             commands.push(Command::perform(
-                                perform_adb_commands(
-                                    action,
-                                    i_package,
-                                    package.removal.to_string(),
-                                    false
-                                ),
+                                perform_adb_commands(action, CommandType::PackageManager(p_info)),
                                 if i == 0 {
                                     Message::ChangePackageState
                                 } else {
@@ -277,14 +281,13 @@ impl List {
                     );
 
                     for (j, action) in actions.into_iter().enumerate() {
+                        let p_info = PackageInfo {
+                            index: i,
+                            removal: self.phone_packages[i_user][i].removal.to_string(),
+                        };
                         // Only the first command can change the package state
                         commands.push(Command::perform(
-                            perform_adb_commands(
-                                action,
-                                i,
-                                self.phone_packages[i_user][i].removal.to_string(),
-                                false
-                            ),
+                            perform_adb_commands(action, CommandType::PackageManager(p_info)),
                             if j == 0 {
                                 Message::ChangePackageState
                             } else {
@@ -323,8 +326,8 @@ impl List {
                 Command::none()
             }
             Message::ChangePackageState(res) => {
-                if let Ok(i) = res {
-                    let package = &mut self.phone_packages[i_user][i.index];
+                if let Ok(CommandType::PackageManager(p)) = res {
+                    let package = &mut self.phone_packages[i_user][p.index];
                     update_selection_count(&mut self.selection, package.state, false);
 
                     if !settings.device.multi_user_mode {
@@ -332,15 +335,16 @@ impl List {
                         package.selected = false;
                     } else {
                         for u in &selected_device.user_list {
-                            self.phone_packages[u.index][i.index].state = self.phone_packages[u.index][i.index]
+                            self.phone_packages[u.index][p.index].state = self.phone_packages
+                                [u.index][p.index]
                                 .state
                                 .opposite(settings.device.disable_mode);
-                            self.phone_packages[u.index][i.index].selected = false;
+                            self.phone_packages[u.index][p.index].selected = false;
                         }
                     }
                     self.selection
                         .selected_packages
-                        .drain_filter(|s_i| *s_i == i.index);
+                        .drain_filter(|s_i| *s_i == p.index);
                     Self::filter_package_lists(self);
                 }
                 Command::none()

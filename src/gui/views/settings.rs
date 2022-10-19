@@ -1,11 +1,11 @@
 use crate::core::config::{BackupSettings, Config, DeviceSettings, GeneralSettings};
 use crate::core::save::{backup_phone, list_available_backup_user, restore_backup};
 use crate::core::save::{list_available_backups, BACKUP_DIR};
-use crate::core::sync::{Phone, User};
+use crate::core::sync::{perform_adb_commands, CommandType, Phone, User};
 use crate::core::theme::Theme;
-use crate::core::utils::{CommandResult, open_url, string_to_theme, DisplayablePath};
-use crate::gui::perform_adb_commands;
+use crate::core::utils::{open_url, string_to_theme, DisplayablePath};
 use crate::gui::style;
+use crate::gui::views::list::PackageInfo;
 use crate::gui::widgets::package_row::PackageRow;
 
 use iced::widget::{button, checkbox, column, container, pick_list, radio, row, text, Space};
@@ -38,7 +38,7 @@ pub enum Message {
     BackupSelected(DisplayablePath),
     BackupDevice,
     RestoreDevice,
-    RestoringDevice(Result<CommandResult, ()>),
+    RestoringDevice(Result<CommandType, ()>),
     DeviceBackedUp(Result<(), String>),
     BackupUserSelected(User),
 }
@@ -48,6 +48,7 @@ impl Settings {
         &mut self,
         phone: &Phone,
         packages: &[Vec<PackageRow>],
+        nb_running_async_adb_commands: &mut u32,
         msg: Message,
     ) -> Command<Message> {
         match msg {
@@ -138,27 +139,32 @@ impl Settings {
                 Command::none()
             }
 
-            // TODO: actions are run asynchronously so we can't use the "last action".
-            // We need to change view when all actions are done!
             Message::RestoreDevice => {
-                let packages = restore_backup(phone, packages, &self.device).unwrap();
-
+                // TODO: error handling
+                // Where to display error to the user ?
+                let r_packages = restore_backup(phone, packages, &self.device).unwrap();
                 let mut commands = vec![];
-                let mut is_last = false;
-                for p in packages {
+                *nb_running_async_adb_commands = 0;
+
+                for p in r_packages {
+                    let p_info = PackageInfo {
+                        index: p.index,
+                        removal: "RESTORE".to_string(),
+                    };
                     for command in p.commands.clone() {
+                        *nb_running_async_adb_commands += 1;
                         commands.push(Command::perform(
-                            perform_adb_commands(command, p.index, "Restore".to_string(), is_last),
+                            perform_adb_commands(
+                                command,
+                                CommandType::PackageManager(p_info.clone()),
+                            ),
                             Message::RestoringDevice,
                         ));
-                    }
-                    if p.commands.is_empty() {
-                        is_last = true;
-                        commands.push(Command::perform(async move { Ok(CommandResult { index: 0, last_command: true}) }, Message::RestoringDevice));
                     }
                 }
                 Command::batch(commands)
             }
+            // Trigger an action in mod.rs (Message::SettingsAction(msg))
             Message::RestoringDevice(_) => Command::none(),
         }
     }
@@ -305,30 +311,28 @@ impl Settings {
             .on_press(Message::RestoreDevice)
             .style(style::Button::Primary);
 
-        let backup_ctn = container(
-            if self.device.backup.backups.is_empty() {
-                row![
-                    text("No backup").style(style::Text::Commentary),
-                    restore_btn,
-                    "Restore the state of the phone",
-                    Space::new(Length::Fill, Length::Shrink),
-                    backup_btn,
-                ]
-                .spacing(10)
-                .align_items(Alignment::Center)
-            } else {
-                row![
-                    backup_pick_list,
-                    backup_user_pick_list,
-                    restore_btn,
-                    "Restore the state of the phone",
-                    Space::new(Length::Fill, Length::Shrink),
-                    backup_btn,
-                ]
-                .spacing(10)
-                .align_items(Alignment::Center)
-            },
-        )
+        let backup_ctn = container(if self.device.backup.backups.is_empty() {
+            row![
+                text("No backup").style(style::Text::Commentary),
+                restore_btn,
+                "Restore the state of the phone",
+                Space::new(Length::Fill, Length::Shrink),
+                backup_btn,
+            ]
+            .spacing(10)
+            .align_items(Alignment::Center)
+        } else {
+            row![
+                backup_pick_list,
+                backup_user_pick_list,
+                restore_btn,
+                "Restore the state of the phone",
+                Space::new(Length::Fill, Length::Shrink),
+                backup_btn,
+            ]
+            .spacing(10)
+            .align_items(Alignment::Center)
+        })
         .padding(10)
         .width(Length::Fill)
         .height(Length::Shrink)

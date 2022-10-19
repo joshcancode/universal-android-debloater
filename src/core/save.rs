@@ -106,7 +106,7 @@ pub fn list_available_backup_user(backup: DisplayablePath) -> Vec<User> {
 
 pub struct BackupPackage {
     pub index: usize,
-    pub commands: Vec<String>
+    pub commands: Vec<String>,
 }
 
 pub fn restore_backup(
@@ -152,11 +152,14 @@ pub fn restore_backup(
                             &backup_package.state,
                             &settings.backup.selected_user.unwrap(),
                             selected_device,
-                        )
+                        ),
                     });
                 }
             }
-            commands.push(BackupPackage { index: 0, commands: vec![] } );
+            commands.push(BackupPackage {
+                index: 0,
+                commands: vec![],
+            });
             Ok(commands)
         }
         Err(e) => Err("[BACKUP]: ".to_owned() + &e.to_string()),
