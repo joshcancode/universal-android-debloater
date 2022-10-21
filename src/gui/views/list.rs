@@ -1,4 +1,3 @@
-use crate::core::save::backup_phone;
 use crate::core::sync::{action_handler, perform_adb_commands, CommandType, Phone, User};
 use crate::core::theme::Theme;
 use crate::core::uad_lists::{
@@ -81,9 +80,7 @@ pub enum Message {
     PackageStateSelected(PackageState),
     RemovalSelected(Removal),
     ApplyActionOnSelection(Action),
-    ExportSelectionPressed,
     List(usize, RowMessage),
-    ExportedSelection(Result<(), String>),
     ChangePackageState(Result<CommandType, ()>),
     Nothing,
 }
@@ -298,21 +295,6 @@ impl List {
                 }
                 Command::batch(commands)
             }
-            Message::ExportSelectionPressed => Command::perform(
-                backup_phone(
-                    selected_device.user_list.clone(),
-                    settings.device.device_id.clone(),
-                    self.phone_packages.clone(),
-                ),
-                Message::ExportedSelection,
-            ),
-            Message::ExportedSelection(export) => {
-                match export {
-                    Ok(_) => info!("Selection exported"),
-                    Err(err) => error!("Selection export: {}", err),
-                };
-                Command::none()
-            }
             Message::UserSelected(user) => {
                 for p in &mut self.phone_packages[i_user] {
                     p.selected = false;
@@ -488,16 +470,10 @@ impl List {
                     .on_press(Message::ToggleAllSelected(false))
                     .style(style::Button::Primary);
 
-                let export_selection_btn = button("Backup the device")
-                    .padding(5)
-                    .on_press(Message::ExportSelectionPressed)
-                    .style(style::Button::Primary);
-
                 let action_row = row![
                     select_all_btn,
                     unselect_all_btn,
                     Space::new(Length::Fill, Length::Shrink),
-                    export_selection_btn,
                     apply_restore_selection,
                     apply_remove_selection,
                 ]

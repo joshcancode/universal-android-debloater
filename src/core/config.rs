@@ -26,6 +26,7 @@ pub struct BackupSettings {
     pub selected: Option<DisplayablePath>,
     pub users: Vec<User>,
     pub selected_user: Option<User>,
+    pub backup_state: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

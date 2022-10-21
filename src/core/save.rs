@@ -101,9 +101,6 @@ pub fn list_available_backup_user(backup: DisplayablePath) -> Vec<User> {
     }
 }
 
-// TODO: we need to change the way package state change are handled
-// Better to try to match the wanted state instead of applying the "reverse" ADB command
-
 pub struct BackupPackage {
     pub index: usize,
     pub commands: Vec<String>,
@@ -128,7 +125,7 @@ pub fn restore_backup(
                 let mut _index = 0;
                 match selected_device.user_list.iter().find(|x| x.id == u.id) {
                     Some(i) => _index = i.index,
-                    None => return Err(format!("[BACKUP]: user {} doesn't exist", u.id)),
+                    None => return Err(format!("user {} doesn't exist", u.id)),
                 };
 
                 for (i, backup_package) in u.packages.iter().enumerate() {
@@ -140,7 +137,7 @@ pub fn restore_backup(
                         Some(p) => package = p.into(),
                         None => {
                             return Err(format!(
-                                "[BACKUP]: package {} is not found for user {}",
+                                "{} not found for user {}",
                                 backup_package.name, u.id
                             ))
                         }
