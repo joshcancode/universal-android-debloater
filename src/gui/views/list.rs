@@ -536,23 +536,18 @@ impl List {
         remote: bool,
         phone: Phone,
     ) -> (HashMap<String, Package>, UadListState) {
-        let (uad_lists, remote) = load_debloat_lists(remote);
+        let (uad_lists, _) = load_debloat_lists(remote);
         match uad_lists {
             Ok(list) => {
                 env::set_var("ANDROID_SERIAL", phone.adb_id.clone());
                 if phone.adb_id.is_empty() {
                     error!("AppsView ready but no phone found");
                 }
-
-                if !remote {
-                    (list, UadListState::Failed)
-                } else {
-                    (list, UadListState::Done)
-                }
+                (list, UadListState::Done)
             }
-            Err(_) => {
-                error!("Error loading debloat list for the phone");
-                (HashMap::new(), UadListState::Failed)
+            Err(local_list) => {
+                error!("Error loading remote debloat list for the phone. Fallback to embedded (and outdated) list");
+                (local_list, UadListState::Failed)
             }
         }
     }
