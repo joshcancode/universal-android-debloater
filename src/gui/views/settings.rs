@@ -1,6 +1,8 @@
 use crate::core::config::{BackupSettings, Config, DeviceSettings, GeneralSettings};
-use crate::core::save::{BACKUP_DIR, list_available_backups, backup_phone, list_available_backup_user, restore_backup};
-use crate::core::sync::{perform_adb_commands, CommandType, Phone, User};
+use crate::core::save::{
+    backup_phone, list_available_backup_user, list_available_backups, restore_backup, BACKUP_DIR,
+};
+use crate::core::sync::{perform_adb_commands, CommandType, Phone};
 use crate::core::theme::Theme;
 use crate::core::utils::{open_url, string_to_theme, DisplayablePath};
 use crate::gui::style;
@@ -8,7 +10,7 @@ use crate::gui::views::list::PackageInfo;
 use crate::gui::widgets::package_row::PackageRow;
 
 use iced::widget::{button, checkbox, column, container, pick_list, radio, row, text, Space};
-use iced::{Alignment, Command, Element, Length, Renderer};
+use iced::{alignment, Alignment, Command, Element, Length, Renderer};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
@@ -39,7 +41,7 @@ pub enum Message {
     RestoreDevice,
     RestoringDevice(Result<CommandType, ()>),
     DeviceBackedUp(Result<(), String>),
-    BackupUserSelected(User),
+    //BackupUserSelected(User),
 }
 
 impl Settings {
@@ -95,7 +97,7 @@ impl Settings {
                             selected: backups.first().cloned(),
                             users: phone.user_list.clone(),
                             selected_user: phone.user_list.first().copied(),
-                            backup_state: "".to_string()
+                            backup_state: "".to_string(),
                         };
                     }
                     None => {
@@ -108,7 +110,7 @@ impl Settings {
                                 selected: backups.first().cloned(),
                                 users: phone.user_list.clone(),
                                 selected_user: phone.user_list.first().copied(),
-                                backup_state: "".to_string()
+                                backup_state: "".to_string(),
                             },
                         }
                     }
@@ -135,39 +137,38 @@ impl Settings {
                 self.device.backup.selected = self.device.backup.backups.first().cloned();
                 Command::none()
             }
-            Message::BackupUserSelected(user) => {
+            /*            Message::BackupUserSelected(user) => {
                 self.device.backup.selected_user = Some(user);
                 Command::none()
-            }
-
+            }*/
             Message::RestoreDevice => {
                 // TODO: error handling
                 // Display error message on settings panel if restore_backup -> Err
                 match restore_backup(phone, packages, &self.device) {
                     Ok(r_packages) => {
-                       let mut commands = vec![];
-                       *nb_running_async_adb_commands = 0;
+                        let mut commands = vec![];
+                        *nb_running_async_adb_commands = 0;
 
-                       for p in r_packages {
-                           let p_info = PackageInfo {
-                               index: p.index,
-                               removal: "RESTORE".to_string(),
-                           };
-                           for command in p.commands.clone() {
-                               *nb_running_async_adb_commands += 1;
-                               commands.push(Command::perform(
-                                   perform_adb_commands(
-                                       command,
-                                       CommandType::PackageManager(p_info.clone()),
-                                   ),
-                                   Message::RestoringDevice,
-                               ));
-                           }
-                       }
-                       Command::batch(commands) 
+                        for p in r_packages {
+                            let p_info = PackageInfo {
+                                index: p.index,
+                                removal: "RESTORE".to_string(),
+                            };
+                            for command in p.commands.clone() {
+                                *nb_running_async_adb_commands += 1;
+                                commands.push(Command::perform(
+                                    perform_adb_commands(
+                                        command,
+                                        CommandType::PackageManager(p_info.clone()),
+                                    ),
+                                    Message::RestoringDevice,
+                                ));
+                            }
+                        }
+                        Command::batch(commands)
                     }
                     Err(e) => {
-                        self.device.backup.backup_state = format!("ERROR: {}", e.clone());
+                        self.device.backup.backup_state = format!("ERROR: {}", e);
                         error!("[BACKUP] {}", e);
                         Command::none()
                     }
@@ -220,7 +221,9 @@ impl Settings {
             row![
                 text("The following settings only affect the currently selected device :")
                     .style(style::Text::Danger),
-                text(phone.model.to_owned())
+                text(phone.model.to_owned()),
+                Space::new(Length::Fill, Length::Shrink),
+                text(phone.adb_id.clone()).style(style::Text::Commentary)
             ]
             .spacing(7),
         )
@@ -312,41 +315,41 @@ impl Settings {
         .width(Length::Units(75))
         .padding(6);*/
 
-        let backup_btn = button("Backup")
+        let backup_btn = button(text("Backup").horizontal_alignment(alignment::Horizontal::Center))
             .padding(5)
             .on_press(Message::BackupDevice)
-            .style(style::Button::Primary);
+            .style(style::Button::Primary)
+            .width(Length::Units(77));
 
-        let restore_btn = button("Restore")
-            .padding(5)
-            .on_press(Message::RestoreDevice)
-            .style(style::Button::Primary);
+        let restore_btn = |disabled| {
+            if disabled {
+                button(text("Restore").horizontal_alignment(alignment::Horizontal::Center))
+                    .padding(5)
+                    .on_press(Message::RestoreDevice)
+                    .width(Length::Units(7))
+            } else {
+                button(text("No backup").horizontal_alignment(alignment::Horizontal::Center))
+                    .padding(5)
+                    .width(Length::Units(77))
+            }
+        };
 
         let locate_backup_btn = button("Open backup directory")
-            .on_press(Message::UrlPressed(BACKUP_DIR.join(phone.adb_id.clone()).to_path_buf()))
+            .on_press(Message::UrlPressed(BACKUP_DIR.to_path_buf()))
             .padding(5)
             .style(style::Button::Primary);
 
-        let backup_row = row![
-                backup_btn,
-                "Backup the current state of the phone",
-                Space::new(Length::Fill, Length::Shrink),
-                locate_backup_btn,
-            ]
+        let backup_row = row![backup_btn, "Backup the current state of the phone",]
             .spacing(10)
             .align_items(Alignment::Center);
 
         let restore_row = if self.device.backup.backups.is_empty() {
-            row![
-                restore_btn,
-                text("No backup").style(style::Text::Commentary),
-                "Restore the state of the phone",
-            ]
-            .spacing(10)
-            .align_items(Alignment::Center)
+            row![restore_btn(false), "Restore the state of the phone",]
+                .spacing(10)
+                .align_items(Alignment::Center)
         } else {
             row![
-                restore_btn,
+                restore_btn(true),
                 "Restore the state of the phone",
                 Space::new(Length::Fill, Length::Shrink),
                 text(self.device.backup.backup_state.clone()).style(style::Text::Danger),
@@ -357,11 +360,19 @@ impl Settings {
             .align_items(Alignment::Center)
         };
 
-        let backup_restore_ctn = container(column![backup_row, restore_row].spacing(10))
-            .padding(10)
-            .width(Length::Fill)
-            .height(Length::Shrink)
-            .style(style::Container::Frame);
+        let backup_restore_ctn = container(
+            row![
+                column![backup_row, restore_row].spacing(10),
+                Space::new(Length::Fill, Length::Shrink),
+                locate_backup_btn,
+            ]
+            .spacing(10)
+            .align_items(Alignment::Start),
+        )
+        .padding(10)
+        .width(Length::Fill)
+        .height(Length::Shrink)
+        .style(style::Container::Frame);
 
         let content = column![
             text("Theme").size(25),
